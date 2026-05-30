@@ -1,0 +1,28 @@
+# Example sidecar deployment alongside Hermes.
+# touch-grass owns the ESP32 and serves MCP on a private network; Hermes
+# connects to http://touch-grass:8765/mcp. The port is intentionally NOT
+# published to the host (no auth on the MCP endpoint yet).
+services:
+  touch-grass:
+    build: .
+    # Pass the ESP32 serial device into the container. Adjust the path to match
+    # your host (commonly /dev/ttyUSB0 for a CP210x-based ESP32 dev board).
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    environment:
+      TOUCH_GRASS_HOST: "0.0.0.0"
+      TOUCH_GRASS_PORT: "8765"
+      # TOUCH_GRASS_SERIAL: "/dev/ttyUSB0"   # uncomment to pin instead of auto-detect
+    restart: unless-stopped
+    networks:
+      - hermes-net
+
+  # Your Hermes agent runs on the same private network and reaches the server
+  # at http://touch-grass:8765/mcp
+  # hermes:
+  #   image: your-hermes-image
+  #   networks: [hermes-net]
+
+networks:
+  hermes-net:
+    driver: bridge

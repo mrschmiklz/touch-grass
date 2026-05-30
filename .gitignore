@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Test / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local scratch / experiments (single-underscore prefix, e.g. _smoke.py)
+_*.py
+# ...but never ignore package __init__.py files (the pattern above matches them).
+!__init__.py
+!**/__init__.py

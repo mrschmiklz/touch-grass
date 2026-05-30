@@ -1,0 +1,76 @@
+{
+  "$comment": "Mirror of the MCP tool schemas for non-MCP clients (e.g. OpenAI-style function calling). The MCP server is the source of truth.",
+  "tools": [
+    {
+      "name": "keyboard_status",
+      "description": "Return the current BLE link state: READY, CONNECTED_NOT_READY, or DISCONNECTED.",
+      "parameters": { "type": "object", "properties": {}, "required": [] }
+    },
+    {
+      "name": "keyboard_wait_ready",
+      "description": "Block until the keyboard is READY (host subscribed) or timeout.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timeout_s": { "type": "number", "default": 30.0, "description": "Max seconds to wait." }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "keyboard_type",
+      "description": "Type a string on the target machine. Set press_enter=true to append Enter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "Text to type." },
+          "press_enter": { "type": "boolean", "default": false }
+        },
+        "required": ["text"]
+      }
+    },
+    {
+      "name": "keyboard_key",
+      "description": "Press a single special key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["ENTER", "RETURN", "ESC", "BACKSPACE", "TAB", "SPACE", "MINUS", "EQUALS", "CAPS", "PRINTSCREEN", "SCROLLLOCK", "PAUSE", "INSERT", "HOME", "PAGEUP", "DELETE", "END", "PAGEDOWN", "RIGHT", "LEFT", "DOWN", "UP", "NUMLOCK", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"]
+          }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "keyboard_combo",
+      "description": "Press a modifier combo, e.g. CTRL+C, WIN+R, CTRL+SHIFT+T. Modifiers: CTRL SHIFT ALT WIN (alias GUI).",
+      "parameters": {
+        "type": "object",
+        "properties": { "combo": { "type": "string" } },
+        "required": ["combo"]
+      }
+    },
+    {
+      "name": "keyboard_media",
+      "description": "Press a media key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "enum": ["NEXT", "PREV", "STOP", "PLAY", "PAUSE", "MUTE", "VOLUP", "VOLDOWN"] }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "keyboard_pair",
+      "description": "DESTRUCTIVE: clear all bonds and re-advertise for fresh pairing. Requires confirm=true.",
+      "parameters": {
+        "type": "object",
+        "properties": { "confirm": { "type": "boolean", "default": false } },
+        "required": []
+      }
+    }
+  ]
+}

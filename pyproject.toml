@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "touch-grass"
+version = "0.1.0"
+description = "An MCP server that lets an AI agent type on a real machine via a paired ESP32 Bluetooth keyboard. The agent finally touches grass."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "mrschmiklz" }]
+keywords = ["mcp", "esp32", "ble", "hid", "keyboard", "automation", "agent", "hermes"]
+dependencies = [
+    "mcp>=1.2.0",
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+touch-grass = "touch_grass.server:main"
+
+[project.urls]
+Homepage = "https://github.com/mrschmiklz/touch-grass"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/touch_grass"]
