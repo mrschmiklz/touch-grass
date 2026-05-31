@@ -72,6 +72,27 @@ mouse_click("LEFT")                          # -> {"ok": true, ...}
 keyboard_type("Hello from the sandbox.")     # -> {"ok": true, ...}
 ```
 
+## Agent safety contract
+
+Recommended flow for any hardware action:
+
+1. Call `keyboard_status` / `mouse_status` to see the link state.
+2. Proceed **only if the user explicitly requested a hardware action.**
+3. Call `*_wait_ready`; continue only when `state == "READY"`.
+4. Perform **one small action**, then verify `ok == true` before the next.
+5. Never call the destructive `*_pair` tools unless the user explicitly says so.
+
+**Danger zone** — these cause real-world side effects; require explicit user
+intent and verify each result:
+
+- `keyboard_type`, `keyboard_combo` (can run commands, e.g. via `WIN+R`)
+- `mouse_click`, `mouse_button_down` (activates whatever is under the cursor)
+- `keyboard_pair`, `mouse_pair` (destructive: wipes bonds)
+
+If a user only wants discovery/status (no input), restrict the exposed tools to
+`*_status` / `*_wait_ready`, or run the servers in **mock mode**
+(`TOUCH_GRASS_MOCK_SERIAL=1`) so every action safely returns `ERR:NO_HARDWARE`.
+
 ## Safety
 
 - These drive whatever the target machine has focused / whatever is under the
@@ -79,4 +100,6 @@ keyboard_type("Hello from the sandbox.")     # -> {"ok": true, ...}
   are authorized to control.
 - A stray `mouse_click` can activate whatever is under the cursor. Move
   deliberately and verify before clicking.
-- Never call `keyboard_pair` / `mouse_pair` unless you intend to re-pair.
+- Mock mode (`TOUCH_GRASS_MOCK_SERIAL=1`) exposes the tool schemas and returns
+  `ERR:NO_HARDWARE` for actions — safe for setup verification while people sleep
+  or the wrong window has focus.

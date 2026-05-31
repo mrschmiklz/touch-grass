@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "touch-grass"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP servers that let an AI agent type and move a mouse on a real machine via paired ESP32 Bluetooth HID devices. The agent finally touches grass."
 readme = "README.md"
 requires-python = ">=3.10"

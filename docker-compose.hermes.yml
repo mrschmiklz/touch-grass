@@ -1,0 +1,46 @@
+# Hermes-on-host deployment (e.g. a Telegram/Discord gateway running on the
+# host). Both servers are published on LOOPBACK only, so a host Hermes reaches:
+#   keyboard -> http://127.0.0.1:8765/mcp
+#   mouse    -> http://127.0.0.1:8766/mcp
+#
+# Safe discovery / CI first: this file defaults to MOCK mode (no hardware), so
+# you can verify MCP discovery before anything can touch real input:
+#   TOUCH_GRASS_MOCK_SERIAL=1 docker compose -f docker-compose.hermes.yml up -d --build
+#
+# For REAL hardware: set TOUCH_GRASS_MOCK_SERIAL=0 and uncomment the `devices:`
+# blocks (pin each board; both are CP210x). Prefer /dev/serial/by-id/ symlinks.
+services:
+  touch-grass-keyboard:
+    build: .
+    command: ["serve", "--device", "keyboard"]
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      TOUCH_GRASS_DEVICE: "keyboard"
+      TOUCH_GRASS_HOST: "0.0.0.0"
+      TOUCH_GRASS_PORT: "8765"
+      # Loopback-published on the host; opt out of the non-loopback auth guard.
+      # For a stronger posture, set TOUCH_GRASS_AUTH_TOKEN instead (clients send
+      # `Authorization: Bearer <token>`).
+      TOUCH_GRASS_UNSAFE_NO_AUTH: "1"
+      TOUCH_GRASS_MOCK_SERIAL: "${TOUCH_GRASS_MOCK_SERIAL:-1}"
+      TOUCH_GRASS_KB_SERIAL: "${TOUCH_GRASS_KB_SERIAL:-/dev/ttyUSB0}"
+    # devices:
+    #   - "/dev/ttyUSB0:/dev/ttyUSB0"      # uncomment for real hardware
+    restart: unless-stopped
+
+  touch-grass-mouse:
+    build: .
+    command: ["serve", "--device", "mouse"]
+    ports:
+      - "127.0.0.1:8766:8766"
+    environment:
+      TOUCH_GRASS_DEVICE: "mouse"
+      TOUCH_GRASS_HOST: "0.0.0.0"
+      TOUCH_GRASS_PORT: "8766"
+      TOUCH_GRASS_UNSAFE_NO_AUTH: "1"
+      TOUCH_GRASS_MOCK_SERIAL: "${TOUCH_GRASS_MOCK_SERIAL:-1}"
+      TOUCH_GRASS_MOUSE_SERIAL: "${TOUCH_GRASS_MOUSE_SERIAL:-/dev/ttyUSB1}"
+    # devices:
+    #   - "/dev/ttyUSB1:/dev/ttyUSB1"      # uncomment for real hardware
+    restart: unless-stopped

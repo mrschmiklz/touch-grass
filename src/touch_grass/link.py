@@ -26,9 +26,45 @@ STATE_CONNECTED_NOT_READY = "CONNECTED_NOT_READY"
 STATE_DISCONNECTED = "DISCONNECTED"
 STATES = (STATE_READY, STATE_CONNECTED_NOT_READY, STATE_DISCONNECTED)
 
+# Sentinel "port" reported by the mock link so logs/diagnostics are unambiguous.
+MOCK_PORT = "mock://no-hardware"
+
 
 class LinkError(RuntimeError):
     """Raised when the serial link cannot be established or used."""
+
+
+class MockLink:
+    """A no-hardware stand-in for SerialLink (enabled by TOUCH_GRASS_MOCK_SERIAL).
+
+    Exposes the same interface the Keyboard/Mouse controllers use, so both
+    servers boot and MCP tool discovery works without a real ESP32 attached.
+    STATUS always reports DISCONNECTED and every action returns
+    ``ERR:NO_HARDWARE`` — the agent can verify the MCP contract but can never
+    accidentally drive real keystrokes, clicks, or a destructive re-pair.
+
+    Intended for MCP discovery, CI, and agent setup verification.
+    """
+
+    def __init__(self, port: str = MOCK_PORT, baud: int = 115200):
+        self.port = port
+        self.baud = baud
+        self.state = STATE_DISCONNECTED
+
+    def start(self) -> None:  # no-op: nothing to open
+        pass
+
+    def stop(self) -> None:   # no-op: nothing to close
+        pass
+
+    def query(self, cmd: str, timeout: float = 20.0) -> str:
+        token = cmd.strip().upper()
+        if token == "STATUS":
+            return STATE_DISCONNECTED
+        if token == "BONDS":
+            return "BONDS:0"
+        # Any real action (TYPE/KEY/MOVE/CLICK/PAIR/...) is safely refused.
+        return "ERR:NO_HARDWARE"
 
 
 class SerialLink:

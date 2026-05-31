@@ -17,6 +17,7 @@ import sys
 from mcp.server.fastmcp import FastMCP
 
 from . import __version__
+from .auth import run_server
 from .config import Config
 from .mouse import Mouse
 from .runtime import build_link
@@ -107,8 +108,7 @@ def init_link(cfg: Config) -> Mouse:
 def serve(cfg: Config) -> None:
     global _mouse
     _mouse = init_link(cfg)
-    mcp.settings.host = cfg.host
-    mcp.settings.port = cfg.port
-    print(f"touch-grass v{__version__} (mouse) serving MCP on "
-          f"http://{cfg.host}:{cfg.port}/mcp (serial: {_mouse.link.port})", file=sys.stderr)
-    mcp.run(transport="streamable-http")
+    auth_note = "bearer-token auth ON" if cfg.auth_token else "no auth"
+    print(f"touch-grass v{__version__} (mouse) serving MCP on {cfg.endpoint} "
+          f"(serial: {_mouse.link.port}; {auth_note})", file=sys.stderr)
+    run_server(mcp, cfg)

@@ -22,6 +22,8 @@ Thumbs.db
 
 # Local scratch / experiments (single-underscore prefix, e.g. _smoke.py)
 _*.py
-# ...but never ignore package __init__.py files (the pattern above matches them).
+# ...but never ignore dunder package files (the pattern above matches them).
 !__init__.py
 !**/__init__.py
+!__main__.py
+!**/__main__.py

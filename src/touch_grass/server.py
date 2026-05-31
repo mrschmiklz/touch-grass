@@ -13,13 +13,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 
 from mcp.server.fastmcp import FastMCP
 
 from . import __version__
-from .config import DEVICE_KEYBOARD, DEVICES, Config
+from .auth import run_server
+from .config import DEVICE_KEYBOARD, DEVICE_MOUSE, DEVICES, Config
 from .detect import find_esp32_port, list_ports
 from .keyboard import Keyboard
 from .runtime import build_link
@@ -101,11 +103,19 @@ def _init_link(cfg: Config) -> Keyboard:
 def _serve_keyboard(cfg: Config) -> None:
     global _kb
     _kb = _init_link(cfg)
-    mcp.settings.host = cfg.host
-    mcp.settings.port = cfg.port
-    print(f"touch-grass v{__version__} (keyboard) serving MCP on "
-          f"http://{cfg.host}:{cfg.port}/mcp (serial: {_kb.link.port})", file=sys.stderr)
-    mcp.run(transport="streamable-http")
+    auth_note = "bearer-token auth ON" if cfg.auth_token else "no auth"
+    print(f"touch-grass v{__version__} (keyboard) serving MCP on {cfg.endpoint} "
+          f"(serial: {_kb.link.port}; {auth_note})", file=sys.stderr)
+    run_server(mcp, cfg)
+
+
+def _serve(cfg: Config) -> None:
+    """Serve the device named by cfg.device."""
+    if cfg.device == DEVICE_KEYBOARD:
+        _serve_keyboard(cfg)
+    else:
+        from .mouse_server import serve as serve_mouse
+        serve_mouse(cfg)
 
 
 def _build_device(cfg: Config):
@@ -120,47 +130,118 @@ def _default_device() -> str:
     return os.environ.get("TOUCH_GRASS_DEVICE", DEVICE_KEYBOARD)
 
 
+def _serve_all(mock: bool) -> None:
+    """Convenience launcher: run the keyboard and mouse servers as child processes.
+
+    Uses subprocess (not multiprocessing) so it's robust across platforms and
+    avoids the console-script re-import footgun of spawn on Windows.
+    """
+    import subprocess
+
+    env = dict(os.environ)
+    if mock:
+        env["TOUCH_GRASS_MOCK_SERIAL"] = "1"
+
+    procs = []
+    for device in (DEVICE_KEYBOARD, DEVICE_MOUSE):
+        cmd = [sys.executable, "-m", "touch_grass", "serve", "--device", device]
+        procs.append(subprocess.Popen(cmd, env=env))
+    print(f"touch-grass v{__version__} serve-all: keyboard :8765 + mouse :8766 "
+          f"({'mock' if mock else 'live'}). Ctrl+C to stop.", file=sys.stderr)
+    try:
+        for p in procs:
+            p.wait()
+    except KeyboardInterrupt:
+        for p in procs:
+            p.terminate()
+        for p in procs:
+            try:
+                p.wait(timeout=5)
+            except Exception:
+                p.kill()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="touch-grass",
-        description="MCP server exposing a physical ESP32 BLE keyboard/mouse to AI agents.",
+        description="MCP servers exposing a physical ESP32 BLE keyboard/mouse to AI agents.",
     )
     sub = parser.add_subparsers(dest="command")
+
     for name, help_text in (
-        ("serve", "run the MCP server (default)"),
+        ("serve", "run one device's MCP server (default)"),
         ("status", "print the current link state and exit"),
+        ("config", "print the resolved config for a device and exit"),
     ):
         p = sub.add_parser(name, help=help_text)
         p.add_argument(
             "--device", choices=DEVICES, default=_default_device(),
-            help="which device this instance controls (default: keyboard, or $TOUCH_GRASS_DEVICE)",
+            help="which device (default: keyboard, or $TOUCH_GRASS_DEVICE)",
         )
-    sub.add_parser("detect", help="list serial ports / detected ESP32 and exit")
+        p.add_argument("--mock", action="store_true", help="no-hardware mock serial mode")
+        if name in ("status", "config"):
+            p.add_argument("--json", action="store_true", help="emit JSON")
+
+    sa = sub.add_parser("serve-all", help="run BOTH device servers (keyboard :8765 + mouse :8766)")
+    sa.add_argument("--mock", action="store_true", help="no-hardware mock serial mode")
+
+    dt = sub.add_parser("detect", help="list serial ports / detected ESP32 and exit")
+    dt.add_argument("--json", action="store_true", help="emit JSON")
+
+    dr = sub.add_parser("doctor", help="preflight check for MCP discovery and exit")
+    dr.add_argument("--mock", action="store_true", help="check assuming no-hardware mock mode")
+    dr.add_argument("--json", action="store_true", help="emit JSON")
 
     args = parser.parse_args()
 
+    # A --mock flag on any subcommand turns on mock mode for that invocation.
+    if getattr(args, "mock", False):
+        os.environ["TOUCH_GRASS_MOCK_SERIAL"] = "1"
+
     if args.command == "detect":
-        print("Detected ESP32:", find_esp32_port() or "(none)")
-        print("All ports:")
-        for line in list_ports() or ["(none)"]:
-            print("  " + line)
+        if getattr(args, "json", False):
+            print(json.dumps({"detected": find_esp32_port(), "ports": list_ports()}, indent=2))
+        else:
+            print("Detected ESP32:", find_esp32_port() or "(none)")
+            print("All ports:")
+            for line in list_ports() or ["(none)"]:
+                print("  " + line)
+        return
+
+    if args.command == "doctor":
+        from . import doctor as _doc
+
+        report = _doc.collect(Config.from_env(DEVICE_KEYBOARD), Config.from_env(DEVICE_MOUSE))
+        if getattr(args, "json", False):
+            print(json.dumps(report, indent=2))
+        else:
+            print(_doc.format_human(report))
+        raise SystemExit(0 if report["ok"] else 1)
+
+    if args.command == "serve-all":
+        _serve_all(getattr(args, "mock", False))
         return
 
     device = getattr(args, "device", None) or _default_device()
     cfg = Config.from_env(device)
 
+    if args.command == "config":
+        if getattr(args, "json", False):
+            print(json.dumps(cfg.as_dict(), indent=2))
+        else:
+            for k, v in cfg.as_dict().items():
+                print(f"{k}: {v}")
+        return
+
     if args.command == "status":
         dev = _build_device(cfg)
-        print(dev.status())
+        res = dev.status()
+        print(json.dumps(res) if getattr(args, "json", False) else res)
         dev.link.stop()
         return
 
     # Default action is to serve the configured device.
-    if cfg.device == DEVICE_KEYBOARD:
-        _serve_keyboard(cfg)
-    else:
-        from .mouse_server import serve as serve_mouse
-        serve_mouse(cfg)
+    _serve(cfg)
 
 
 if __name__ == "__main__":

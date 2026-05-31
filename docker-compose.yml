@@ -1,18 +1,21 @@
-# Example sidecar deployment alongside Hermes.
+# Hermes-in-Docker deployment: Hermes shares a private network with the servers
+# and reaches them by service name (no host port publishing). For a Hermes that
+# runs on the HOST instead, use docker-compose.hermes.yml (loopback-published).
 #
 # touch-grass runs ONE container per device — a keyboard server and a mouse
-# server — each owning its own ESP32 and serving MCP on its own port over a
-# private network. Hermes connects to both:
-#   keyboard -> http://touch-grass-kb:8765/mcp
+# server — each owning its own ESP32 and serving MCP on its own port:
+#   keyboard -> http://touch-grass-keyboard:8765/mcp
 #   mouse    -> http://touch-grass-mouse:8766/mcp
 #
 # Both ESP32 boards are CP210x, so auto-detect can't tell them apart: pin each
 # device's path explicitly below. On Linux, `ls -l /dev/serial/by-id/` gives you
 # stable per-board symlinks if /dev/ttyUSB ordering ever shifts.
 #
-# Ports are intentionally NOT published to the host (no auth on MCP yet).
+# Ports are intentionally NOT published to the host. They bind 0.0.0.0 inside
+# the container; UNSAFE_NO_AUTH opts out of the auth guard for the trusted
+# private network. Set TOUCH_GRASS_AUTH_TOKEN instead for a stronger posture.
 services:
-  touch-grass-kb:
+  touch-grass-keyboard:
     build: .
     command: ["serve", "--device", "keyboard"]
     devices:
@@ -21,6 +24,7 @@ services:
       TOUCH_GRASS_DEVICE: "keyboard"
       TOUCH_GRASS_HOST: "0.0.0.0"
       TOUCH_GRASS_PORT: "8765"
+      TOUCH_GRASS_UNSAFE_NO_AUTH: "1"
       TOUCH_GRASS_KB_SERIAL: "/dev/ttyUSB0"
     restart: unless-stopped
     networks:
@@ -35,13 +39,14 @@ services:
       TOUCH_GRASS_DEVICE: "mouse"
       TOUCH_GRASS_HOST: "0.0.0.0"
       TOUCH_GRASS_PORT: "8766"
+      TOUCH_GRASS_UNSAFE_NO_AUTH: "1"
       TOUCH_GRASS_MOUSE_SERIAL: "/dev/ttyUSB1"
     restart: unless-stopped
     networks:
       - hermes-net
 
   # Your Hermes agent runs on the same private network and reaches the servers
-  # at http://touch-grass-kb:8765/mcp and http://touch-grass-mouse:8766/mcp
+  # at http://touch-grass-keyboard:8765/mcp and http://touch-grass-mouse:8766/mcp
   # hermes:
   #   image: your-hermes-image
   #   networks: [hermes-net]

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install (editable, with dev extras)
+        run: pip install -e ".[dev]"
+
+      - name: Unit tests
+        run: pytest -q
+
+      # No hardware in CI: mock mode proves the MCP contract end-to-end.
+      - name: doctor (mock) — MCP discovery preflight
+        env:
+          TOUCH_GRASS_MOCK_SERIAL: "1"
+        run: touch-grass doctor --json
+
+      - name: config resolves (mock)
+        env:
+          TOUCH_GRASS_MOCK_SERIAL: "1"
+        run: |
+          touch-grass config --device keyboard --json
+          touch-grass config --device mouse --json
