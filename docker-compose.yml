@@ -1,24 +1,47 @@
 # Example sidecar deployment alongside Hermes.
-# touch-grass owns the ESP32 and serves MCP on a private network; Hermes
-# connects to http://touch-grass:8765/mcp. The port is intentionally NOT
-# published to the host (no auth on the MCP endpoint yet).
+#
+# touch-grass runs ONE container per device — a keyboard server and a mouse
+# server — each owning its own ESP32 and serving MCP on its own port over a
+# private network. Hermes connects to both:
+#   keyboard -> http://touch-grass-kb:8765/mcp
+#   mouse    -> http://touch-grass-mouse:8766/mcp
+#
+# Both ESP32 boards are CP210x, so auto-detect can't tell them apart: pin each
+# device's path explicitly below. On Linux, `ls -l /dev/serial/by-id/` gives you
+# stable per-board symlinks if /dev/ttyUSB ordering ever shifts.
+#
+# Ports are intentionally NOT published to the host (no auth on MCP yet).
 services:
-  touch-grass:
+  touch-grass-kb:
     build: .
-    # Pass the ESP32 serial device into the container. Adjust the path to match
-    # your host (commonly /dev/ttyUSB0 for a CP210x-based ESP32 dev board).
+    command: ["serve", "--device", "keyboard"]
     devices:
-      - "/dev/ttyUSB0:/dev/ttyUSB0"
+      - "/dev/ttyUSB0:/dev/ttyUSB0"     # the keyboard ESP32
     environment:
+      TOUCH_GRASS_DEVICE: "keyboard"
       TOUCH_GRASS_HOST: "0.0.0.0"
       TOUCH_GRASS_PORT: "8765"
-      # TOUCH_GRASS_SERIAL: "/dev/ttyUSB0"   # uncomment to pin instead of auto-detect
+      TOUCH_GRASS_KB_SERIAL: "/dev/ttyUSB0"
     restart: unless-stopped
     networks:
       - hermes-net
 
-  # Your Hermes agent runs on the same private network and reaches the server
-  # at http://touch-grass:8765/mcp
+  touch-grass-mouse:
+    build: .
+    command: ["serve", "--device", "mouse"]
+    devices:
+      - "/dev/ttyUSB1:/dev/ttyUSB1"     # the mouse ESP32
+    environment:
+      TOUCH_GRASS_DEVICE: "mouse"
+      TOUCH_GRASS_HOST: "0.0.0.0"
+      TOUCH_GRASS_PORT: "8766"
+      TOUCH_GRASS_MOUSE_SERIAL: "/dev/ttyUSB1"
+    restart: unless-stopped
+    networks:
+      - hermes-net
+
+  # Your Hermes agent runs on the same private network and reaches the servers
+  # at http://touch-grass-kb:8765/mcp and http://touch-grass-mouse:8766/mcp
   # hermes:
   #   image: your-hermes-image
   #   networks: [hermes-net]

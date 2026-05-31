@@ -71,6 +71,90 @@
         "properties": { "confirm": { "type": "boolean", "default": false } },
         "required": []
       }
+    },
+    {
+      "name": "mouse_status",
+      "description": "Return the current mouse BLE link state: READY, CONNECTED_NOT_READY, or DISCONNECTED.",
+      "parameters": { "type": "object", "properties": {}, "required": [] }
+    },
+    {
+      "name": "mouse_wait_ready",
+      "description": "Block until the mouse is READY (host subscribed) or timeout.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timeout_s": { "type": "number", "default": 30.0, "description": "Max seconds to wait." }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "mouse_move",
+      "description": "Move the pointer by a RELATIVE offset in pixels (+dx = right, +dy = down). No absolute coordinates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dx": { "type": "integer", "description": "Horizontal offset; positive = right." },
+          "dy": { "type": "integer", "description": "Vertical offset; positive = down." }
+        },
+        "required": ["dx", "dy"]
+      }
+    },
+    {
+      "name": "mouse_click",
+      "description": "Click a button (press + release).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "button": { "type": "string", "enum": ["LEFT", "RIGHT", "MIDDLE"], "default": "LEFT" }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "mouse_button_down",
+      "description": "Press and hold a button (start a drag). Pair with mouse_button_up.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "button": { "type": "string", "enum": ["LEFT", "RIGHT", "MIDDLE"], "default": "LEFT" }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "mouse_button_up",
+      "description": "Release a held button (end a drag).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "button": { "type": "string", "enum": ["LEFT", "RIGHT", "MIDDLE"], "default": "LEFT" }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "mouse_scroll",
+      "description": "Scroll the vertical wheel. Positive = up, negative = down.",
+      "parameters": {
+        "type": "object",
+        "properties": { "amount": { "type": "integer" } },
+        "required": ["amount"]
+      }
+    },
+    {
+      "name": "mouse_release",
+      "description": "Release all currently held mouse buttons.",
+      "parameters": { "type": "object", "properties": {}, "required": [] }
+    },
+    {
+      "name": "mouse_pair",
+      "description": "DESTRUCTIVE: clear all bonds and re-advertise for fresh pairing. Requires confirm=true.",
+      "parameters": {
+        "type": "object",
+        "properties": { "confirm": { "type": "boolean", "default": false } },
+        "required": []
+      }
     }
   ]
 }

@@ -1,33 +1,36 @@
 ---
 name: touch-grass
-description: Type on a real machine via a paired ESP32 Bluetooth keyboard. Use when you need to send physical keystrokes, special keys, or modifier shortcuts to the target computer the ESP32 is paired with.
+description: Type and move a mouse on a real machine via paired ESP32 Bluetooth HID devices. Use when you need to send physical keystrokes, shortcuts, pointer moves, clicks, or scrolls to the target computer the ESP32s are paired with.
 ---
 
-# touch-grass — physical keyboard control
+# touch-grass — physical keyboard + mouse control
 
-This skill lets you operate a **real Bluetooth keyboard** on a target machine.
-An ESP32 (advertising as "Logitech K380") is paired with the target over BLE; a
-`touch-grass` MCP server owns the ESP32 and exposes the tools below.
+This skill lets you operate a **real Bluetooth keyboard and mouse** on a target
+machine. Two ESP32s (a keyboard advertising as "Logitech K380" and a mouse as
+"Logitech M720") are paired with the target over BLE. touch-grass runs **one MCP
+server per device** (keyboard and mouse on separate endpoints), each owning its
+ESP32 and exposing the tools below.
 
 ## When to use
 
-- You need to send keystrokes or shortcuts to the **physical target computer**
-  (e.g. open the Run dialog, switch windows, type into an app, control media).
+- You need to send keystrokes/shortcuts or move/click/scroll on the **physical
+  target computer** (e.g. open the Run dialog, click a button, drag, scroll).
 
 ## When NOT to use
 
-- For text you can deliver through a normal API/file. This drives a real
-  keyboard into whatever window currently has focus on the target.
+- For anything you can deliver through a normal API/file. These drive real HID
+  input into whatever window currently has focus on the target.
 
 ## Golden rule: verify before and after
 
-1. Call `keyboard_wait_ready` first. Proceed only if `state == "READY"`.
+1. Call `keyboard_wait_ready` / `mouse_wait_ready` first. Proceed only if
+   `state == "READY"`.
 2. After every action, check `ok == true`. The result is
    `{"ok": bool, "state": "READY"|"CONNECTED_NOT_READY"|"DISCONNECTED", "response": "OK"|"ERR:..."}`.
-3. If `state` is `DISCONNECTED`, wait and retry — the keyboard auto-reconnects
-   to its bonded host; it does not need re-pairing.
+3. If `state` is `DISCONNECTED`, wait and retry — the devices auto-reconnect to
+   their bonded host; they do not need re-pairing.
 
-## Tools
+## Keyboard tools
 
 | Tool | Use |
 | --- | --- |
@@ -39,17 +42,41 @@ An ESP32 (advertising as "Logitech K380") is paired with the target over BLE; a
 | `keyboard_media(name)` | Media key: PLAY PAUSE NEXT PREV STOP MUTE VOLUP VOLDOWN. |
 | `keyboard_pair(confirm=false)` | DESTRUCTIVE: wipes bonds to re-pair. Needs `confirm=true`. |
 
-## Example: open Notepad on the target
+## Mouse tools
+
+Movement is **relative** (pixels): `+dx` = right, `+dy` = down. There are no
+absolute coordinates — move relative to the current pointer position, and read
+back the on-screen result if you need to confirm position.
+
+| Tool | Use |
+| --- | --- |
+| `mouse_status()` | Current link state. |
+| `mouse_wait_ready(timeout_s=30)` | Block until READY. Call this first. |
+| `mouse_move(dx, dy)` | Relative move in pixels. |
+| `mouse_click(button="LEFT")` | Click LEFT / RIGHT / MIDDLE. |
+| `mouse_button_down(button)` / `mouse_button_up(button)` | Hold / release for drags. |
+| `mouse_scroll(amount)` | Vertical wheel; positive = up. |
+| `mouse_release()` | Release all held buttons. |
+| `mouse_pair(confirm=false)` | DESTRUCTIVE: wipes bonds to re-pair. Needs `confirm=true`. |
+
+## Example: open Notepad and click in it
 
 ```
-keyboard_wait_ready()                       # -> {"ok": true, "ready": true, "state": "READY"}
+keyboard_wait_ready()                        # -> {"ok": true, "ready": true, "state": "READY"}
 keyboard_combo("WIN+R")                      # -> {"ok": true, "state": "READY", "response": "OK"}
-keyboard_type("notepad", press_enter=true)   # -> {"ok": true, "state": "READY", "response": "OK"}
+keyboard_type("notepad", press_enter=true)   # -> {"ok": true, ...}
+
+mouse_wait_ready()                           # -> {"ok": true, "ready": true, "state": "READY"}
+mouse_move(200, 150)                         # -> {"ok": true, "state": "READY", "response": "OK"}
+mouse_click("LEFT")                          # -> {"ok": true, ...}
 keyboard_type("Hello from the sandbox.")     # -> {"ok": true, ...}
 ```
 
 ## Safety
 
-- This types into whatever the target machine has focused — treat it as remote
-  physical input. Only use it on machines you own or are authorized to control.
-- Never call `keyboard_pair` unless you intend to re-pair the device.
+- These drive whatever the target machine has focused / whatever is under the
+  pointer — treat them as remote physical input. Only use on machines you own or
+  are authorized to control.
+- A stray `mouse_click` can activate whatever is under the cursor. Move
+  deliberately and verify before clicking.
+- Never call `keyboard_pair` / `mouse_pair` unless you intend to re-pair.

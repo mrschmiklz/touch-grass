@@ -1,22 +1,26 @@
 # touch-grass
 
-> An MCP server that lets an AI agent type on a **real machine** via a paired
-> ESP32 Bluetooth keyboard. After living its whole life in a sandbox, the agent
-> finally touches grass.
+> MCP servers that let an AI agent type and move a mouse on a **real machine**
+> via paired ESP32 Bluetooth HID devices. After living its whole life in a
+> sandbox, the agent finally touches grass.
 
 `touch-grass` is the bridge between an autonomous agent (built for
 [Hermes](https://github.com/NousResearch) and any other MCP client) and the
-physical world. A long-running [MCP](https://modelcontextprotocol.io) server
-owns an ESP32 over USB serial; the ESP32 acts as a Bluetooth HID keyboard paired
-with a target computer. The agent calls typed tools (`keyboard_type`,
-`keyboard_combo`, …) and real keystrokes land on the target.
+physical world. Long-running [MCP](https://modelcontextprotocol.io) servers own
+ESP32s over USB serial; the ESP32s act as Bluetooth HID devices (a keyboard and
+a mouse) paired with a target computer. The agent calls typed tools
+(`keyboard_type`, `mouse_move`, …) and real input lands on the target.
 
-It pairs with the [`esp32-bt-keyboard`](https://github.com/mrschmiklz/esp32-bt-keyboard)
-firmware and does **not** modify it — this is purely the control/skill layer.
+It runs **one server instance per device** — a keyboard server and a mouse
+server, each owning its own ESP32 and listening on its own port — so the agent
+connects to two endpoints. It pairs with the
+[`esp32-bt-keyboard`](https://github.com/mrschmiklz/esp32-bt-keyboard) and
+[`esp32-bt-mouse`](https://github.com/mrschmiklz/esp32-bt-mouse) firmware and
+does **not** modify them — this is purely the control/skill layer.
 
-> **Responsible use:** this drives a real keyboard into whatever window the
-> target machine has focused. Use it only on hardware and accounts you own or
-> are authorized to control.
+> **Responsible use:** this drives a real keyboard and mouse into whatever the
+> target machine has focused / under the pointer. Use it only on hardware and
+> accounts you own or are authorized to control.
 
 ---
 
@@ -41,15 +45,25 @@ reliable and agent-friendly:
 
 ```
 Hermes (+ parallel subagents)
-        │  MCP (streamable HTTP)
-   touch-grass server         ← single owner of the serial port
-        │  serial @115200 (opened once; never resets the ESP32)
-   /dev/ttyUSB0 → ESP32 (Logitech K380) → BLE → target machine
+        │  MCP (streamable HTTP) — two endpoints
+        ├── touch-grass-kb    :8765   ← single owner of the keyboard serial port
+        │       │  serial @115200 (opened once; never resets the ESP32)
+        │   /dev/ttyUSB0 → ESP32 (Logitech K380) → BLE → target machine
+        │
+        └── touch-grass-mouse :8766   ← single owner of the mouse serial port
+                │  serial @115200 (opened once; never resets the ESP32)
+            /dev/ttyUSB1 → ESP32 (Logitech M720) → BLE → target machine
 ```
+
+One server per device keeps each serial owner simple and isolated: a crash or
+re-pair on one device never touches the other, and each gets its own lock for
+safe parallel-subagent access.
 
 ---
 
 ## Tools
+
+### Keyboard (`touch-grass-kb`)
 
 | Tool | Description |
 | --- | --- |
@@ -61,14 +75,27 @@ Hermes (+ parallel subagents)
 | `keyboard_media(name)` | `PLAY` `PAUSE` `NEXT` `PREV` `STOP` `MUTE` `VOLUP` `VOLDOWN`. |
 | `keyboard_pair(confirm=false)` | **Destructive**: wipe bonds to re-pair. Requires `confirm=true`. |
 
+### Mouse (`touch-grass-mouse`)
+
+| Tool | Description |
+| --- | --- |
+| `mouse_status()` | Current link state. |
+| `mouse_wait_ready(timeout_s=30)` | Block until `READY`. Call this first. |
+| `mouse_move(dx, dy)` | **Relative** move in pixels (`+dx` right, `+dy` down). |
+| `mouse_click(button="LEFT")` | Click `LEFT` / `RIGHT` / `MIDDLE`. |
+| `mouse_button_down(button)` / `mouse_button_up(button)` | Hold / release (drags). |
+| `mouse_scroll(amount)` | Vertical wheel; positive = up. |
+| `mouse_release()` | Release all held buttons. |
+| `mouse_pair(confirm=false)` | **Destructive**: wipe bonds to re-pair. Requires `confirm=true`. |
+
 Each returns `{"ok": bool, "state": "...", "response": "OK"|"ERR:..."}`.
 
 ---
 
 ## Quick start (local, for testing)
 
-Requires Python 3.10+ and an ESP32 running the `esp32-bt-keyboard` firmware,
-paired with your target machine.
+Requires Python 3.10+ and the ESP32s running the `esp32-bt-keyboard` /
+`esp32-bt-mouse` firmware, paired with your target machine.
 
 ```bash
 pip install .
@@ -76,41 +103,54 @@ pip install .
 # See what serial ports are visible / which ESP32 was detected:
 touch-grass detect
 
-# One-shot state check:
-touch-grass status
+# One-shot state checks (pin the port; both boards are CP210x):
+TOUCH_GRASS_KB_SERIAL=COM5    touch-grass status --device keyboard
+TOUCH_GRASS_MOUSE_SERIAL=COM7 touch-grass status --device mouse
 
-# Run the MCP server (defaults to 127.0.0.1:8765):
-touch-grass serve
+# Run a server (one per device). Keyboard defaults to :8765, mouse to :8766:
+TOUCH_GRASS_KB_SERIAL=COM5    touch-grass serve --device keyboard
+TOUCH_GRASS_MOUSE_SERIAL=COM7 touch-grass serve --device mouse
 ```
 
-The MCP endpoint is served at `http://<host>:<port>/mcp`.
+Each MCP endpoint is served at `http://<host>:<port>/mcp`.
 
 ### Configuration
 
+`--device {keyboard,mouse}` (or `TOUCH_GRASS_DEVICE`) selects which device an
+instance controls. Because both ESP32 boards are CP210x, auto-detect can't tell
+them apart — **pin each port explicitly** with the per-device vars:
+
 | Env var | Default | Purpose |
 | --- | --- | --- |
-| `TOUCH_GRASS_SERIAL` | auto-detect | Serial device (e.g. `/dev/ttyUSB0`, `COM5`). |
+| `TOUCH_GRASS_DEVICE` | `keyboard` | Which device this instance controls. |
+| `TOUCH_GRASS_KB_SERIAL` | (fallback below) | Keyboard serial device (e.g. `COM5`, `/dev/ttyUSB0`). |
+| `TOUCH_GRASS_MOUSE_SERIAL` | (fallback below) | Mouse serial device (e.g. `COM7`, `/dev/ttyUSB1`). |
+| `TOUCH_GRASS_SERIAL` | auto-detect | Generic fallback if the per-device var is unset. |
 | `TOUCH_GRASS_BAUD` | `115200` | Baud rate. |
 | `TOUCH_GRASS_HOST` | `127.0.0.1` | MCP bind host. |
-| `TOUCH_GRASS_PORT` | `8765` | MCP bind port. |
+| `TOUCH_GRASS_PORT` | `8765` kb / `8766` mouse | MCP bind port. |
 
 ---
 
 ## Deploying as a Hermes sidecar (recommended)
 
-Run `touch-grass` as its own container with the ESP32 passed through; Hermes and
-its subagents connect to it over a private Docker network.
+Run two `touch-grass` containers — one per device — with each ESP32 passed
+through; Hermes and its subagents connect over a private Docker network.
 
 ```bash
 docker compose up -d --build
 ```
 
-See [`docker-compose.yml`](docker-compose.yml). Hermes then registers the MCP
-server at `http://touch-grass:8765/mcp`.
+See [`docker-compose.yml`](docker-compose.yml). Hermes then registers both MCP
+servers: `http://touch-grass-kb:8765/mcp` and
+`http://touch-grass-mouse:8766/mcp`.
 
-> **Security note:** the MCP endpoint has no built-in authentication yet. Keep it
-> on a private network and do **not** publish the port to the host or the
-> internet. Put it behind a reverse proxy with auth/TLS if you must expose it.
+> **Tip:** on Linux, use `/dev/serial/by-id/...` symlinks (stable per board) to
+> pin each device, in case `/dev/ttyUSB*` ordering shifts on reboot.
+
+> **Security note:** the MCP endpoints have no built-in authentication yet. Keep
+> them on a private network and do **not** publish the ports to the host or the
+> internet. Put them behind a reverse proxy with auth/TLS if you must expose.
 
 The agent-facing usage guide lives in [`skill/SKILL.md`](skill/SKILL.md), with
 function schemas in [`skill/tools.json`](skill/tools.json) for non-MCP clients.
@@ -119,9 +159,11 @@ function schemas in [`skill/tools.json`](skill/tools.json) for non-MCP clients.
 
 ## Roadmap
 
-- **v1 (now):** keyboard control.
-- **v2:** mouse tools (`mouse_move`, `mouse_click`, `mouse_scroll`) on the same
-  server, backed by the `esp32-bt-mouse` firmware.
+- **v0.1:** keyboard control.
+- **v0.2 (now):** mouse tools (`mouse_move`, `mouse_click`, `mouse_scroll`, …)
+  via a second server instance, backed by the `esp32-bt-mouse` firmware.
+- **Later:** optional bearer-token auth on the MCP endpoints; a firmware
+  `WHOAMI` identity command so a single host can auto-assign each board.
 
 ## License
 

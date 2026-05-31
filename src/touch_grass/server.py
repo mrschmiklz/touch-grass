@@ -1,9 +1,9 @@
-"""touch-grass MCP server.
+"""touch-grass MCP server (keyboard) + shared CLI entry point.
 
-A long-running FastMCP server (streamable HTTP) that owns the ESP32 serial link
-and exposes physical keyboard control as typed tools. Designed to run as a
-sidecar container that Hermes (and its subagents) connect to over a private
-network.
+A long-running FastMCP server (streamable HTTP) that owns the ESP32 keyboard
+serial link and exposes physical keyboard control as typed tools. The CLI here
+also launches the *mouse* server (see mouse_server.py) — touch-grass runs one
+instance per device, so `serve --device mouse` starts that one instead.
 
 Tools return structured results ({"ok", "state", ...}) so an agent's
 verification loop can confirm each action.
@@ -13,15 +13,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 
 from mcp.server.fastmcp import FastMCP
 
 from . import __version__
-from .config import Config
+from .config import DEVICE_KEYBOARD, DEVICES, Config
 from .detect import find_esp32_port, list_ports
 from .keyboard import Keyboard
-from .link import SerialLink
+from .runtime import build_link
 
 mcp = FastMCP(
     "touch-grass",
@@ -94,39 +95,49 @@ async def keyboard_pair(confirm: bool = False) -> dict:
 
 # ── Startup / CLI ───────────────────────────────────────────────────────────────
 def _init_link(cfg: Config) -> Keyboard:
-    port = cfg.serial or find_esp32_port()
-    if not port:
-        raise SystemExit(
-            "No ESP32 serial port found. Set TOUCH_GRASS_SERIAL, or check the USB "
-            "device passthrough. Available ports:\n  " + "\n  ".join(list_ports() or ["(none)"])
-        )
-    link = SerialLink(port, cfg.baud)
-    link.start()
-    return Keyboard(link)
+    return Keyboard(build_link(cfg))
 
 
-def _serve(cfg: Config) -> None:
+def _serve_keyboard(cfg: Config) -> None:
     global _kb
     _kb = _init_link(cfg)
     mcp.settings.host = cfg.host
     mcp.settings.port = cfg.port
-    print(f"touch-grass v{__version__} serving MCP on http://{cfg.host}:{cfg.port}/mcp "
-          f"(serial: {_kb.link.port})", file=sys.stderr)
+    print(f"touch-grass v{__version__} (keyboard) serving MCP on "
+          f"http://{cfg.host}:{cfg.port}/mcp (serial: {_kb.link.port})", file=sys.stderr)
     mcp.run(transport="streamable-http")
+
+
+def _build_device(cfg: Config):
+    """Return a started device controller (Keyboard or Mouse) for one-shot use."""
+    if cfg.device == DEVICE_KEYBOARD:
+        return _init_link(cfg)
+    from .mouse_server import init_link as init_mouse
+    return init_mouse(cfg)
+
+
+def _default_device() -> str:
+    return os.environ.get("TOUCH_GRASS_DEVICE", DEVICE_KEYBOARD)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="touch-grass",
-        description="MCP server exposing a physical ESP32 BLE keyboard to AI agents.",
+        description="MCP server exposing a physical ESP32 BLE keyboard/mouse to AI agents.",
     )
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("serve", help="run the MCP server (default)")
-    sub.add_parser("status", help="print the current link state and exit")
+    for name, help_text in (
+        ("serve", "run the MCP server (default)"),
+        ("status", "print the current link state and exit"),
+    ):
+        p = sub.add_parser(name, help=help_text)
+        p.add_argument(
+            "--device", choices=DEVICES, default=_default_device(),
+            help="which device this instance controls (default: keyboard, or $TOUCH_GRASS_DEVICE)",
+        )
     sub.add_parser("detect", help="list serial ports / detected ESP32 and exit")
 
     args = parser.parse_args()
-    cfg = Config.from_env()
 
     if args.command == "detect":
         print("Detected ESP32:", find_esp32_port() or "(none)")
@@ -135,14 +146,21 @@ def main() -> None:
             print("  " + line)
         return
 
+    device = getattr(args, "device", None) or _default_device()
+    cfg = Config.from_env(device)
+
     if args.command == "status":
-        kb = _init_link(cfg)
-        print(kb.status())
-        kb.link.stop()
+        dev = _build_device(cfg)
+        print(dev.status())
+        dev.link.stop()
         return
 
-    # Default action is to serve.
-    _serve(cfg)
+    # Default action is to serve the configured device.
+    if cfg.device == DEVICE_KEYBOARD:
+        _serve_keyboard(cfg)
+    else:
+        from .mouse_server import serve as serve_mouse
+        serve_mouse(cfg)
 
 
 if __name__ == "__main__":
